@@ -263,5 +263,12 @@ public abstract class MovementModel {
 			rng = new Random(0);
 		}
 	}
+
+    /**
+	 * Required for RAPID Routing 
+	 */
+    	public double getAvgSpeed(){
+		return (this.maxSpeed - this.minSpeed)/2.0 + this.minSpeed;
+	}
 	
 }

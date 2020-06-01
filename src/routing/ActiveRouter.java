@@ -143,6 +143,13 @@ public abstract class ActiveRouter extends MessageRouter {
 		
 		return m;
 	}
+        /**
+	 * Returns a list of connections this host currently has with other hosts.
+	 * @return a list of connections this host currently has with other hosts
+	 */
+	protected List<Connection> getConnections() {
+		return getHost().getConnections();
+	}
 	
 	/**
 	 * Returns a list of connections this host currently has with other hosts.

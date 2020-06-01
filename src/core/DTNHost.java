@@ -515,4 +515,11 @@ public class DTNHost implements Comparable<DTNHost>, Iterable<Connection> {
 		return new ConnectionIterator(this);
 	}
 
+    /**
+	 * Required for RAPID Routing 
+	 */
+	public MovementModel getMovementModel() {
+		return this.movement;
+	}
+
 }
