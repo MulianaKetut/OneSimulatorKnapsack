@@ -231,7 +231,7 @@ public class EpidemicRouterWithKnapsack extends ActiveRouter {
                     //msg.add(valTtlMsg[j-1]);
 //                        msg.addAll(msg);
                     messages.add(new Tuple<Message, Connection>(m.get(j - 1), con));
-                    // System.out.println("pesan yang masuk buffer " + getHost() + " dengan weight = " + m.get(j - 1).getSize() + " dan value = " + m.get(j - 1).getTtl());
+                    System.out.println("pesan yang masuk buffer " + getHost() + " dengan weight = " + m.get(j - 1).getSize() + " dan value = " + m.get(j - 1).getTtl());
                     tempKapBuf = tempKapBuf - m.get(j - 1).getSize();
                 }
             }

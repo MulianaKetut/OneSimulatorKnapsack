@@ -23,7 +23,6 @@ import routing.rapid.DelayTable;
 import routing.rapid.MeetingEntry;
 
 import core.*;
-import java.util.stream.Collectors;
 
 /**
  * RAPID router
@@ -32,8 +31,6 @@ public class RapidRouter extends ActiveRouter {
     // timestamp for meeting a host in seconds
 
     private double timestamp;
-    // delay table which contains meta data
-    private DelayTable delayTable;
     // utility algorithm (minimizing average delay | minimizing missed deadlines |
     // minimizing maximum delay)
     private Map<Integer, DTNHost> hostMapping;
@@ -43,7 +40,7 @@ public class RapidRouter extends ActiveRouter {
 
     // interval to verify ongoing connections in seconds
     private static final double UTILITY_INTERAL = 100.0;
-
+    private DelayTable delayTable;
     /**
      * Constructor. Creates a new message router based on the settings in the
      * given Settings object.
@@ -387,7 +384,7 @@ public class RapidRouter extends ActiveRouter {
     @Override
     public int receiveMessage(Message m, DTNHost from) {
         int stat = super.receiveMessage(m, from);
-
+        System.out.println(m.getProperty("value"));
         //if message was received successfully add the according delay table entry
         if (stat == 0) {
             DTNHost host = getHost();
@@ -560,8 +557,8 @@ public class RapidRouter extends ActiveRouter {
     }
 
     private double computeRemainingTime(Message msg) {
-        double transferTime = INFINITY;					//MX(i):random variable for corresponding transfer time delay
-        double remainingTime = 0.0;						//a(i): random variable that determines the	remaining time to deliver message i
+        double transferTime = INFINITY;		//MX(i):random variable for corresponding transfer time delay
+        double remainingTime = 0.0;		//a(i): random variable that determines the	remaining time to deliver message i
 
         remainingTime = computeTransferTime(msg, msg.getTo());
         if (delayTable.getDelayEntryByMessageId(msg.getId()) != null) {
@@ -661,8 +658,7 @@ public class RapidRouter extends ActiveRouter {
         List<Tuple<Tuple<Message, Connection>, Double>> messages = new ArrayList<Tuple<Tuple<Message, Connection>, Double>>();
         Collection<Message> msgCollection = getMessageCollection();
 
-        List<Message> m = msgCollection.stream().collect(Collectors.toList());
-
+        //List<Message> m = msgCollection.stream().collect(Collectors.toList());
         for (Connection con : getConnections()) {
             DTNHost other = con.getOtherNode(getHost());
             RapidRouter otherRouter = (RapidRouter) other.getRouter();
@@ -671,22 +667,23 @@ public class RapidRouter extends ActiveRouter {
                 continue; // skip hosts that are transferring
             }
 
-//            double mu = 0.0;
-//            for (Message m : msgCollection) {
-//                if (otherRouter.hasMessage(m.getId())) {
-//                    continue; // skip messages that the other one already has
-//                }
-//
-//                mu = getMarginalUtility(m, con, getHost());
-//                if ((mu) <= 0) {
-//                    continue; // skip messages with a marginal utility smaller or equals to 0.
-//                }
-//
-//                Tuple<Message, Connection> t1 = new Tuple<Message, Connection>(m, con);
-//                Tuple<Tuple<Message, Connection>, Double> t2 = new Tuple<Tuple<Message, Connection>, Double>(t1, mu);
-//                messages.add(t2);
-//            }
-            knapsack(getHost(), (List<Message>) m, otherRouter, messages, con);
+            double mu = 0.0;
+            for (Message m : msgCollection) {
+                if (otherRouter.hasMessage(m.getId())) {
+                    continue; // skip messages that the other one already has
+                }
+                
+                mu = getMarginalUtility(m, con, getHost());
+                m.updateProperty("value", mu);
+                if ((mu) <= 0) {
+                    continue; // skip messages with a marginal utility smaller or equals to 0.
+                }
+
+                Tuple<Message, Connection> t1 = new Tuple<Message, Connection>(m, con);
+                Tuple<Tuple<Message, Connection>, Double> t2 = new Tuple<Tuple<Message, Connection>, Double>(t1, mu);
+                messages.add(t2);
+            }
+            //knapsack(getHost(), (List<Message>) m, otherRouter, messages, con);
         }
         delayTable.setChanged(false);
         if (messages == null) {
@@ -697,51 +694,6 @@ public class RapidRouter extends ActiveRouter {
         return tryTupleMessagesForConnected(messages);	// try to send messages
     }
 
-    private void knapsack(DTNHost thisHost, List<Message> m, RapidRouter othRouter, List<Tuple<Tuple<Message, Connection>, Double>> messages, Connection con) {
-        int kapBuffer = thisHost.getRouter().getBufferSize();
-        int jumMsg = thisHost.getRouter().getNrofMessages();
-        int i, w;
-        int bestValues[][] = new int[jumMsg + 1][kapBuffer + 1];
-        int tempKapBuf = kapBuffer;
-        for (i = 0; i <= jumMsg; i++) {
-            for (w = 0; w <= kapBuffer; w++) {
-                if (i == 0 || w == 0) {
-                    bestValues[i][w] = 0;
-
-                } else if (m.get(i - 1).getSize() <= w) {
-
-//                    bestValues[i][w] = Math.max(m.get(i - 1).getTtl() + bestValues[i - 1][w - m.get(i - 1).getSize()], bestValues[i - 1][w]);
-                    bestValues[i][w] = (int) Math.max(getMarginalUtility(m.get(i - 1), con, thisHost) + bestValues[i - 1][w - m.get(i - 1).getSize()], bestValues[i - 1][w]);
-                } else {
-                    bestValues[i][w] = bestValues[i - 1][w];
-                }
-            }
-        }
-        // return  bestValues[jumMsg][kapBuffer];
-        double mu = 0.0;
-        for (int j = jumMsg; j >= 1; j--) {
-            if (othRouter.hasMessage(m.get(j - 1).getId())) {
-                continue; // skip messages that the other one has
-            }
-
-            mu = getMarginalUtility(m.get(j - 1), con, getHost());
-            if ((mu) <= 0) {
-                continue; // skip messages with a marginal utility smaller or equals to 0.
-            }
-
-            if (bestValues[j][tempKapBuf] > bestValues[j - 1][tempKapBuf]) {
-
-                if (m.get(j - 1).getSize() <= tempKapBuf) {
-
-                    Tuple<Message, Connection> t1 = new Tuple<Message, Connection>(m.get(j - 1), con);
-                    Tuple<Tuple<Message, Connection>, Double> t2 = new Tuple<Tuple<Message, Connection>, Double>(t1, mu);
-                    messages.add(t2);
-                    // System.out.println("pesan yang masuk buffer " + getHost() + " dengan weight = " + m.get(j - 1).getSize() + " dan value = " + m.get(j - 1).getTtl());
-                    tempKapBuf = tempKapBuf - m.get(j - 1).getSize();
-                }
-            }
-        }
-    }
 
     /**
      * Tries to send messages for the connections that are mentioned in the

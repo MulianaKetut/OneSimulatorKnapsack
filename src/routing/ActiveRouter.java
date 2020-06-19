@@ -17,6 +17,7 @@ import core.MessageListener;
 import core.Settings;
 import core.SimClock;
 import core.Tuple;
+import java.util.Map;
 
 /**
  * Superclass of active routers. Contains convenience methods (e.g. 
@@ -40,6 +41,8 @@ public abstract class ActiveRouter extends MessageRouter {
 	protected ArrayList<Connection> sendingConnections;
 	/** sim time when the last TTL check was done */
 	private double lastTtlCheck;
+        
+        public RapidWithKnapsackRouter utilityMsg;
 	
 
 	/**
@@ -314,6 +317,10 @@ public abstract class ActiveRouter extends MessageRouter {
 			if (oldest == null ) {
 				oldest = m;
 			}
+//			else if (getUtility().get(oldest.getId()) < getUtility().get(m.getId())) {
+//                                System.out.println("oldest "+getUtility().get(oldest.getId()) +"m "+getUtility().get(m.getId()));
+//				oldest = m;
+//			}
 			else if (oldest.getReceiveTime() > m.getReceiveTime()) {
 				oldest = m;
 			}
@@ -645,4 +652,5 @@ public abstract class ActiveRouter extends MessageRouter {
 	protected int getConnectionCount() {
 		return getHost().getConnectionCount();
 	}
+        
 }
