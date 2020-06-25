@@ -384,7 +384,7 @@ public class RapidRouter extends ActiveRouter {
     @Override
     public int receiveMessage(Message m, DTNHost from) {
         int stat = super.receiveMessage(m, from);
-        System.out.println(m.getProperty("value"));
+        //System.out.println(m.getProperty("value"));
         //if message was received successfully add the according delay table entry
         if (stat == 0) {
             DTNHost host = getHost();

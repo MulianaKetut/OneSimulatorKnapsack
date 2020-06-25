@@ -23,15 +23,17 @@ import routing.rapid.DelayTable;
 import routing.rapid.MeetingEntry;
 
 import core.*;
+import java.util.LinkedList;
 import java.util.stream.Collectors;
 
 /**
  * RAPID router
  */
-public class RapidWithKnapsackRouter extends ActiveRouterMul {
+public class RapidWithKnapsackRouter extends ActiveRouterMul  {
     // timestamp for meeting a host in seconds
 
     private double timestamp;
+    private Map<DTNHost, List<Message>> report;
     // delay table which contains meta data
     private DelayTable delayTable;
     // utility algorithm (minimizing average delay | minimizing missed deadlines |
@@ -391,23 +393,23 @@ public class RapidWithKnapsackRouter extends ActiveRouterMul {
     public int receiveMessage(Message m, DTNHost from) {
         Collection<Message> msg = this.getMessageCollection();
 //        System.out.println(msg);
-        for (Message ms : msg) {
-            System.out.println(m.getProperty("value"));
-            System.out.println(ms.getProperty("value"));
-            Double coba =  (Double) m.getProperty("value");
-            Double coba1 = (Double) ms.getProperty("value");
-            if (coba > coba1) {
-                if (m.getSize() > this.getFreeBufferSize()) {
-                    //masih coba
-                    super.makeRoomForNewMessage(m.getSize());
-                    return 0;
-                }
-                if (m.getSize() < this.getBufferSize()) {
-                    return 0;// message too big for the buffer
-                }
-            }
-
-        }
+//        for (Message ms : msg) {
+//            System.out.println(m.getProperty("value"));
+//            System.out.println(ms.getProperty("value"));
+//            Double coba = (Double) m.getProperty("value");
+//            Double coba1 = (Double) ms.getProperty("value");
+//            if (coba > coba1) {
+//                if (m.getSize() > this.getFreeBufferSize()) {
+//                    //masih coba
+//                    super.makeRoomForNewMessage(m.getSize());
+//                    return 0;
+//                }
+//                if (m.getSize() < this.getBufferSize()) {
+//                    return 0;// message too big for the buffer
+//                }
+//            }
+//
+//        }
 
         int stat = super.receiveMessage(m, from);
 
@@ -692,6 +694,7 @@ public class RapidWithKnapsackRouter extends ActiveRouterMul {
         //List<Message> m = msgCollection.stream().collect(Collectors.toList());
 //        System.out.println(m);
         for (Connection con : getConnections()) {
+
             DTNHost other = con.getOtherNode(getHost());
             RapidWithKnapsackRouter otherRouter = (RapidWithKnapsackRouter) other.getRouter();
 
@@ -699,55 +702,66 @@ public class RapidWithKnapsackRouter extends ActiveRouterMul {
                 continue; // skip hosts that are transferring
             }
 
-            double mu = 0.0;
-            for (Message m : msgCollection) {
-                if (otherRouter.hasMessage(m.getId())) {
-                    continue; // skip messages that the other one already has
-                }
-
-                mu = getMarginalUtility(m, con, getHost());
-                m.updateProperty("value", mu);
-                if ((mu) <= 0) {
-                    continue; // skip messages with a marginal utility smaller or equals to 0.
-                }
-
-//                Tuple<Message, Connection> t1 = new Tuple<Message, Connection>(m, con);
-//                Tuple<Tuple<Message, Connection>, Double> t2 = new Tuple<Tuple<Message, Connection>, Double>(t1, mu);
-//                messages.add(t2);
-            }
-  
-             knapsack(getHost(), ms, otherRouter, messages, con);
+//            double mu = 0.0;
+//            for (Message m : msgCollection) {
+//                if (otherRouter.hasMessage(m.getId())) {
+//                    continue; // skip messages that the other one already has
+//                }
+//
+//                mu = getMarginalUtility(m, con, getHost());
+//                m.updateProperty("value", mu);
+//                if ((mu) <= 0) {
+//                    continue; // skip messages with a marginal utility smaller or equals to 0.
+//                }
+//
+////                Tuple<Message, Connection> t1 = new Tuple<Message, Connection>(m, con);
+////                Tuple<Tuple<Message, Connection>, Double> t2 = new Tuple<Tuple<Message, Connection>, Double>(t1, mu);
+////                messages.add(t2);
+//            }
+//            knapsackDp(ms, con, getHost());
+            knapsack(getHost(), ms, otherRouter, messages, con);
         }
         delayTable.setChanged(false);
         if (messages == null) {
             return null;
         }
-        
-        Collections.sort(messages, new TupleComparator1());
+
+        //Collections.sort(messages, new TupleComparator1());
         return tryTupleMessagesForConnected(messages);	// try to send messages
     }
 
     private void knapsack(DTNHost thisHost, List<Message> m, RapidWithKnapsackRouter othRouter, List<Tuple<Tuple<Message, Connection>, Double>> messages, Connection con) {
-        int kapBuffer = 20;
+        //int kapBuffer = thisHost.getRouter().getBufferSize();
+        int kapBuffer = thisHost.getRouter().getBufferSize()/500000;
+        //System.out.println(thisHost.getRouter().getBufferSize()+"/"+500000+" = "+kapBuffer);
         int jumMsg = thisHost.getRouter().getNrofMessages();
         int i, w;
         int bestValues[][] = new int[jumMsg + 1][kapBuffer + 1];
-        int tempKapBuf = kapBuffer;
+        //int tempKapBuf = kapBuffer;
         for (i = 0; i <= jumMsg; i++) {
             for (w = 0; w <= kapBuffer; w++) {
                 if (i == 0 || w == 0) {
                     bestValues[i][w] = 0;
 
-                } else if (m.get(i - 1).getSize() <= w) {
-
-//                    bestValues[i][w] = Math.max(m.get(i - 1).getTtl() + bestValues[i - 1][w - m.get(i - 1).getSize()], bestValues[i - 1][w]);
-                    bestValues[i][w] = (int) Math.max(getMarginalUtility(m.get(i - 1), con, thisHost) + bestValues[i - 1][w - m.get(i - 1).getSize()], bestValues[i - 1][w]);
-                } else {
+//                } else if (m.get(i - 1).getSize() <= w) {
+//
+////                    bestValues[i][w] = Math.max(m.get(i - 1).getTtl() + bestValues[i - 1][w - m.get(i - 1).getSize()], bestValues[i - 1][w]);
+//                    bestValues[i][w] = (int) Math.max(getMarginalUtility(m.get(i - 1), con, thisHost) + bestValues[i - 1][w - m.get(i - 1).getSize()], bestValues[i - 1][w]);
+//                } else {
+//                    bestValues[i][w] = bestValues[i - 1][w];
+//                }
+                } else if (w < m.get(i - 1).getSize()) {
                     bestValues[i][w] = bestValues[i - 1][w];
+                } else {
+                    int iWeight = m.get(i - 1).getSize();
+                    //int iValue = (int) m.get(i - 1).getProperty("utility");
+                    int iValue = (int) getMarginalUtility(m.get(i - 1), con, thisHost);
+                    bestValues[i][w] = Math.max(bestValues[i - 1][w], iValue + bestValues[i - 1][w - iWeight]);
                 }
             }
         }
         // return  bestValues[jumMsg][kapBuffer];
+        int tempKapBuf = kapBuffer;
         double mu = 0.0;
         for (int j = jumMsg; j >= 1; j--) {
             if (othRouter.hasMessage(m.get(j - 1).getId())) {
@@ -755,6 +769,8 @@ public class RapidWithKnapsackRouter extends ActiveRouterMul {
             }
 
             mu = getMarginalUtility(m.get(j - 1), con, getHost());
+            m.get(j - 1).updateProperty("value", mu);
+            //System.out.println("util "+m.get(j-1).getProperty("value"));
             if ((mu) <= 0) {
                 continue; // skip messages with a marginal utility smaller or equals to 0.
             }
@@ -766,13 +782,54 @@ public class RapidWithKnapsackRouter extends ActiveRouterMul {
                     Tuple<Message, Connection> t1 = new Tuple<Message, Connection>(m.get(j - 1), con);
                     Tuple<Tuple<Message, Connection>, Double> t2 = new Tuple<Tuple<Message, Connection>, Double>(t1, mu);
                     messages.add(t2);
-                    // System.out.println("pesan yang masuk buffer " + getHost() + " dengan weight = " + m.get(j - 1).getSize() + " dan value = " + m.get(j - 1).getTtl());
+                    //System.out.println("pesan yang masuk buffer " + getHost() + " dengan weight = " + m.get(j - 1).getSize() + " dan value = ");
                     tempKapBuf = tempKapBuf - m.get(j - 1).getSize();
                 }
             }
+            if (tempKapBuf == 0) {
+                break;
+            }
         }
-        
+
     }
+
+//    public void knapsackDp(List<Message> msg, Connection con, DTNHost thisHost) {
+//        int totalWeight = thisHost.getRouter().getBufferSize();
+//        int n = thisHost.getNrofMessages();
+//        int j, i;
+//        int bestValues[][] = new int[n+1][totalWeight];
+//        for (j = 0; j <= totalWeight; j++) {
+//            for (i = 0; i <= n; i++) {
+////                msg.get(i).updateProperty("utility", getMarginalUtility(msg.get(i), con, thisHost));
+//                //double prop = (double) msg.get(i).getProperty("value");
+//                if (i == 0 || j == 0) {
+//                    bestValues[i][j] = 0;
+//                } else if (j < msg.get(i - 1).getSize()) {
+//                    bestValues[i][j] = bestValues[i - 1][j];
+//                } else {
+//                    int iWeight = msg.get(i - 1).getSize();
+//                    int iValue = (int) msg.get(i - 1).getProperty("utility");
+//                    bestValues[i][j] = Math.max(bestValues[i - 1][j], iValue + bestValues[i - 1][j - iWeight]);
+//                }
+//            }
+//        }
+//        int bestSolution[] = null;
+//        if (bestSolution == null) {
+//            bestSolution = new int[n];
+//        }
+//        int tempWeight = totalWeight;
+//        for (int k = n; k >= 1; k--) {
+//            if (bestValues[k][tempWeight] > bestValues[k - 1][tempWeight]) {
+//                bestSolution[k - 1] = 1;
+//                tempWeight = msg.get(k - 1).getSize();
+//                System.out.println("pesan "+bestSolution[k-1]+" weight = "+tempWeight);
+//            }
+//            if (tempWeight == 0) {
+//                break;
+//            }
+//        }
+////        return bestValues[n][totalWeight];
+//    }
     /**
      * Tries to send messages for the connections that are mentioned in the
      * Tuples in the order they are in the list until one of the connections
@@ -790,6 +847,7 @@ public class RapidWithKnapsackRouter extends ActiveRouterMul {
 
         for (Tuple<Tuple<Message, Connection>, Double> t : tuples) {
             Message m = (t.getKey()).getKey();
+          
             Connection con = (t.getKey()).getValue();
             if (startTransfer(m, con) == RCV_OK) {
                 return t;
@@ -808,6 +866,7 @@ public class RapidWithKnapsackRouter extends ActiveRouterMul {
         return new RapidWithKnapsackRouter(this);
     }
 
+  
     /**
      * Comparator for Message-Connection-Double-Tuples that orders the tuples by
      * their double value
