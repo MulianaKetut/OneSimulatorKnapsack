@@ -131,6 +131,7 @@ public abstract class MessageRouter {
 		this.deliveredMessages = new HashMap<String, Message>();
 		this.mListeners = mListeners;
 		this.host = host;
+                System.setProperty("java.util.Arrays.useLegacyMergeSort", "true");
 	}
 	
 	/**
