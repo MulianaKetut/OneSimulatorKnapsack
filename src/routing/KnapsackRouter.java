@@ -11,8 +11,6 @@ package routing;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,19 +21,18 @@ import routing.rapid.DelayTable;
 import routing.rapid.MeetingEntry;
 
 import core.*;
-import java.text.NumberFormat;
+import java.util.Iterator;
 import java.util.LinkedList;
-import java.util.stream.Collectors;
-import routing.knapsack.Knapsack;
+import routing.community.Duration;
 
 /**
  * RAPID router
  */
-public class KnapsackRouter extends ActiveRouterMul {
+public class KnapsackRouter extends ActiveRouter {
     // timestamp for meeting a host in seconds
 
     private double timestamp;
-    private Map<DTNHost, List<Message>> report;
+//    private Map<DTNHost, List<Message>> report;
     // delay table which contains meta data
     private DelayTable delayTable;
     // utility algorithm (minimizing average delay | minimizing missed deadlines |
@@ -48,7 +45,13 @@ public class KnapsackRouter extends ActiveRouterMul {
     // interval to verify ongoing connections in seconds
     private static final double UTILITY_INTERAL = 100.0;
 
-    private Knapsack knapsack;
+    LinkedList<Double> utilityMsg;
+    LinkedList<Integer> lengthMsg;
+
+    protected Map<DTNHost, Double> startTimestamps;
+    protected Map<DTNHost, List<Duration>> connHistory;
+
+//    private Knapsack knapsack;
     /**
      * Constructor. Creates a new message router based on the settings in the
      * given Settings object.
@@ -61,7 +64,9 @@ public class KnapsackRouter extends ActiveRouterMul {
         delayTable = null;
         timestamp = 0.0;
         hostMapping = new HashMap<Integer, DTNHost>();
-        knapsack = null;
+        startTimestamps = new HashMap<DTNHost, Double>();
+        utilityMsg = new LinkedList<Double>();
+        lengthMsg = new LinkedList<Integer>();
     }
 
     @Override
@@ -69,6 +74,10 @@ public class KnapsackRouter extends ActiveRouterMul {
         super.initialize(host, mListeners);
 
         delayTable = new DelayTable(super.getHost());
+        startTimestamps = new HashMap<DTNHost, Double>();
+        connHistory = new HashMap<DTNHost, List<Duration>>();
+        utilityMsg = new LinkedList<Double>();
+        lengthMsg = new LinkedList<Integer>();
     }
 
     /**
@@ -82,57 +91,70 @@ public class KnapsackRouter extends ActiveRouterMul {
         delayTable = r.delayTable;
         timestamp = r.timestamp;
         hostMapping = r.hostMapping;
-        knapsack = r.knapsack;
+        utilityMsg = r.utilityMsg;
+        lengthMsg = r.lengthMsg;
+        startTimestamps = r.startTimestamps;
+//        knapsack = r.knapsack;
     }
 
     @Override
     public void changedConnection(Connection con) {
+        DTNHost peer = con.getOtherNode(getHost());
+            DTNHost myHost = getHost();
+            KnapsackRouter de = (KnapsackRouter) peer.getRouter();
+
+            this.startTimestamps.put(peer, SimClock.getTime());
+            de.startTimestamps.put(myHost, SimClock.getTime());
+        
         if (con.isUp()) {
             /* new connection */
             //simulate control channel on connection up without sending any data
             timestamp = SimClock.getTime();
-
             //synchronize all delay table entries
             synchronizeDelayTables(con);
-
             //synchronize all meeting time entries 
             synchronizeMeetingTimes(con);
-
             updateDelayTableStat(con);
-
             //synchronize acked message ids
             synchronizeAckedMessageIDs(con);
-
             deleteAckedMessages();
-
             //map DTNHost to their address
             doHostMapping(con);
-
             delayTable.dummyUpdateConnection(con);
-
-            //update utility
-            updateUtilityMsg(con);
-            
-            List<Message> m = new ArrayList<>(getHost().getMessageCollection());
-            knapsack1(m);
-            
-//            getKnapsack(getHost(), m);
-
+//            updateUtilityMsg(con);
         } else {
             /* connection went down */
+            double currentTime = startTimestamps.get(peer);
+            double lastConnect = SimClock.getTime();
+
+            // Find or create the connection history list
+            List<Duration> history;
+            if (!connHistory.containsKey(peer)) {
+                history = new LinkedList<Duration>();
+                connHistory.put(peer, history);
+            } else {
+                history = connHistory.get(peer);
+            }
+
+            // add this connection to the list
+            if (lastConnect - currentTime > 0) {
+                history.add(new Duration(currentTime, lastConnect));
+            }
+
+            
             //update connection
             double time = SimClock.getTime() - timestamp;
             delayTable.updateConnection(con, time);
-
             //synchronize acked message ids
             synchronizeAckedMessageIDs(con);
-
             //update set of messages that are known to have reached the destination 
             deleteAckedMessages();
             updateAckedMessageIds();
-
             //synchronize all delay table entries
             synchronizeDelayTables(con);
+
+            
+            startTimestamps.remove(peer);
         }
     }
 
@@ -154,37 +176,26 @@ public class KnapsackRouter extends ActiveRouterMul {
                 //update connection
                 double time = (SimClock.getTime() - 0.1) - timestamp;
                 delayTable.updateConnection(con, time);
-
                 //synchronize acked message ids
                 synchronizeAckedMessageIDs(con);
-
                 //update set of messages that are known to have reached the destination 
                 deleteAckedMessages();
                 updateAckedMessageIds();
-
                 //synchronize all delay table entries
                 synchronizeDelayTables(con);
-
                 // simulate artificial make
                 //simulate control channel on connection up without sending any data
                 timestamp = SimClock.getTime();
-
                 //synchronize all delay table entries
                 synchronizeDelayTables(con);
-
                 //synchronize all meeting time entries 
                 synchronizeMeetingTimes(con);
-
                 updateDelayTableStat(con);
-
                 //synchronize acked message ids
                 synchronizeAckedMessageIDs(con);
-
                 deleteAckedMessages();
-
                 //map DTNHost to their address
                 doHostMapping(con);
-
                 delayTable.dummyUpdateConnection(con);
             }
         }
@@ -336,12 +347,10 @@ public class KnapsackRouter extends ActiveRouterMul {
     @Override
     public Message messageTransferred(String id, DTNHost from) {
         Message m = super.messageTransferred(id, from);
-
         /* was this node the final recipient of the message? */
         if (isDeliveredMessage(m)) {
             delayTable.addAckedMessageIds(id);
         }
-
         return m;
     }
 
@@ -392,15 +401,10 @@ public class KnapsackRouter extends ActiveRouterMul {
     public boolean createNewMessage(Message m) {
 
         boolean stat = super.createNewMessage(m);
-
         //if message was created successfully add the according delay table entry
         if (stat) {
             updateDelayTableEntry(m, getHost(), estimateDelay(m, getHost(), true), SimClock.getTime());
-            m.updateProperty("utility", estimateDelay(m, getHost(), true));
-            m.updateProperty("knapsack", 0);
-            //System.out.println("pesan baru : " + m.getId() + " delay " + estimateDelay(m, getHost(), true));
         }
-
         return stat;
     }
 
@@ -410,13 +414,13 @@ public class KnapsackRouter extends ActiveRouterMul {
             List<Message> msg = new ArrayList<>(getHost().getMessageCollection());
 //            knapsackDrop1(m, msg);
             msg.add(m);
-            knapsack1(msg);
+//            knapsack1(msg);
 //            getKnapsack(getHost(), msg);
         }
 
         int stat = super.receiveMessage(m, from);
         //if message was received successfully add the according delay table entry
-        if (stat == 0 || (int)m.getProperty("knapsack") == 1) {
+        if (stat == 0) {
             DTNHost host = getHost();
             double time = SimClock.getTime();
             double delay = estimateDelay(m, host, true);
@@ -582,7 +586,6 @@ public class KnapsackRouter extends ActiveRouterMul {
         } else {
             packetDelay = delayTable.getDelayEntryByMessageId(msg.getId()).getDelayOf(host);
         }
-
         return packetDelay;
     }
 
@@ -602,7 +605,6 @@ public class KnapsackRouter extends ActiveRouterMul {
                 remainingTime = Math.min(transferTime, remainingTime);	//a(i) = min(MX0(i), MX1(i), ... ,MXk(i)) 
             }
         }
-
         return remainingTime;
     }
 
@@ -644,7 +646,6 @@ public class KnapsackRouter extends ActiveRouterMul {
             meetingTime = entry.getAvgMeetingTime();	//MXZ
             transferTime = meetingTime * Math.ceil(packetsSize / transferOpportunity);	// MX(i) = MXZ * ceil[b(i) / B]
         }
-
         return transferTime;
     }
 
@@ -686,27 +687,26 @@ public class KnapsackRouter extends ActiveRouterMul {
 
     private Tuple<Message, Connection> tryOtherMessages() {
 //        List<Tuple<Tuple<Message, Connection>, Double>> messages = new ArrayList<Tuple<Tuple<Message, Connection>, Double>>();
-        List<Tuple<Message, Connection>> messages = new ArrayList<Tuple<Message, Connection>>(); 
+        List<Tuple<Message, Connection>> messages = new LinkedList<Tuple<Message, Connection>>();
         Collection<Message> msgCollection = getMessageCollection();
 
         for (Connection con : getConnections()) {
 
             DTNHost other = con.getOtherNode(getHost());
             KnapsackRouter otherRouter = (KnapsackRouter) other.getRouter();
+            updateUtilityMsg(con);
 
             if (otherRouter.isTransferring()) {
                 continue; // skip hosts that are transferring
             }
-            int knapsack;
-            for (Message m : msgCollection) {
-                if (otherRouter.hasMessage(m.getId())) {
-                    continue; // skip messages that the other one already has
-                }
-                knapsack = (int) m.getProperty("knapsack");
-                if (knapsack == 1) {                   
+            updateUtilityMsg(con);
+            LinkedList<Integer> knapsack = getKnapsackDrop();
+            for (int i = 0; i <= knapsack.size(); i++) {
+                if(knapsack.get(i) == 1){
                     messages.add(new Tuple<Message, Connection>(m, con));
                 }
             }
+            
         }
         delayTable.setChanged(false);
         if (messages == null) {
@@ -716,69 +716,13 @@ public class KnapsackRouter extends ActiveRouterMul {
         return tryMessagesForConnected(messages);	// try to send messages
     }
 
-    private void knapsack1(List<Message> m) {
-        int kapasitasBuffer = getHost().getRouter().getBufferSize();
-//        int jumlahMsg = getHost().getRouter().getNrofMessages();
-        int jumlahMsg = m.size();
-        int i, w;
-        double bestUtility[][] = new double[jumlahMsg + 1][kapasitasBuffer + 1];
-        ArrayList<ArrayList<Double>> tes = new ArrayList<>();
-        int bestSolution[] = null;
-        
-        for (i = 0; i <= jumlahMsg+1; i++) {
-            for (int j = 0; j <= kapasitasBuffer+1; j++) {
-                if(i==0 || j ==0){
-                    tes.get(i).add(j, 0.0);
-                }else if (j < m.get(i - 1).getSize()) {
-                    tes.get(i - 1).add(j, (Double) m.get(i - 1).getProperty("utility"));
-                } else {
-                    int iLength = m.get(i - 1).getSize();
-                    double iUtility = (double) m.get(i - 1).getProperty("utility");
-                    double mu = Math.max(bestUtility[i - 1][j], iUtility + bestUtility[i - 1][j - iLength]);
-                    tes.get(i-1).add(j, mu);
-                }
-            }
-        }
-        
-//        for (i = 0; i <= jumlahMsg; i++) {
-//            for (w = 0; w <= kapasitasBuffer; w++) {
-//                if (i == 0 || w == 0) {
-//                    bestUtility[i][w] = 0;
-//                } else if (w < m.get(i - 1).getSize()) {
-//                    bestUtility[i][w] = bestUtility[i - 1][w];
-//                } else {
-//                    int iLength = m.get(i - 1).getSize();
-//                    double iUtility = (double) m.get(i - 1).getProperty("utility");
-//                    bestUtility[i][w] = Math.max(bestUtility[i - 1][w], iUtility + bestUtility[i - 1][w - iLength]);
-//                }
-//            }
-//        }
-        int tempKapBuf = kapasitasBuffer;
-        if (bestSolution == null) {
-            bestSolution = new int[jumlahMsg];
-        }
-        for (int j = jumlahMsg; j >= 1; j--) {
-            if (tempKapBuf == 0) {
-                break;
-            } else if (bestUtility[j][tempKapBuf] > bestUtility[j - 1][tempKapBuf]) {
-                bestSolution[j - 1] = 1;
-                m.get(j - 1).updateProperty("knapsack", bestSolution[j - 1]);
-                tempKapBuf = tempKapBuf - m.get(j - 1).getSize();
-            } else {
-                bestSolution[j - 1] = 0;
-                m.get(j - 1).updateProperty("knapsack", bestSolution[j - 1]);
-            }
-        }
-    }
-
     public DelayTable getDelayTable() {
         return delayTable;
     }
-    
-    public double getKnapsack(DTNHost thisHost, List<Message> m){
-        return knapsack.knapsack01(thisHost, m);
-    }
 
+//    public double getKnapsack(DTNHost thisHost, List<Message> m){
+//        return knapsack.knapsack01(thisHost, m);
+//    }
     @Override
     public KnapsackRouter replicate() {
         return new KnapsackRouter(this);
@@ -791,11 +735,48 @@ public class KnapsackRouter extends ActiveRouterMul {
     }
 
     public void updateUtilityMsg(Connection con) {
-        double utility;
-        for (Message m : getHost().getMessageCollection()) {
-            utility = getMarginalUtility(m, con, getHost());
-            m.updateProperty("utility", utility);
+        Double util = 0.0;
+//        LinkedList<Double> utility = new LinkedList<>();
+//        LinkedList<Integer> length = new LinkedList<>();
+        for (Message m : this.getHost().getMessageCollection()) {
+            if (m == null) {
+                break;
+            } else {
+                util = getMarginalUtility(m, con, getHost());
+                System.out.println(util);
+                utilityMsg.add(util);
+                lengthMsg.add(m.getSize());
+            }
         }
+    }
+
+    public LinkedList<Integer> getKnapsackDrop() {
+        LinkedList<Integer> knapsackMsg = new LinkedList<>();
+        int n = utilityMsg.size();
+        int i, length;
+        int bufferSize = getHost().getRouter().getBufferSize();
+        double bestSolution[][] = new double[n + 1][bufferSize + 1];
+
+        for (i = 0; i <= n; i++) {
+            for (length = 0; length <= bufferSize; length++) {
+                if (i == 0 || length == 0) {
+                    bestSolution[i][length] = 0;
+                } else if (lengthMsg.get(i - 1) <= length) {
+                    bestSolution[i][length] = Math.max(bestSolution[i - 1][length],
+                            utilityMsg.get(i - 1) + bestSolution[i - 1][length - lengthMsg.get(i - 1)]);
+                } else {
+                    bestSolution[i][length] = bestSolution[i - 1][length];
+                }
+            }
+        }
+        for (int j = n; j >= 1; i++) {
+            if (bestSolution[j][bufferSize] > bestSolution[j - 1][bufferSize]) {
+                knapsackMsg.addFirst(1);
+            } else {
+                knapsackMsg.addFirst(0);
+            }
+        }
+        return knapsackMsg;
     }
 
     public Map<Integer, DTNHost> getHostMapping() {
@@ -810,4 +791,83 @@ public class KnapsackRouter extends ActiveRouterMul {
         }
         return 0.0;
     }
+
+    public List<Duration> getListDuration(DTNHost nodes) {
+        if (connHistory.containsKey(nodes)) {
+            return connHistory.get(nodes);
+        } else {
+            List<Duration> d = new LinkedList<>();
+            return d;
+        }
+    }
+
+    public double getAverageDurationOfNodes(DTNHost nodes) {
+        List<Duration> list = getListDuration(nodes);
+        Iterator<Duration> duration = list.iterator();
+        double hasil = 0;
+        while (duration.hasNext()) {
+            Duration d = duration.next();
+            hasil += (d.end - d.start);
+        }
+        return hasil / list.size();
+    }
+
+    public int getTransferSpeed() {
+        int speed = getHost().getInterfaces().get(0).getTransmitSpeed();
+        return speed;
+    }
+
+    public double getTransmitRange() {
+        double range = getHost().getInterfaces().get(0).getTransmitRange();
+        return range;
+    }
+
+    public double getMovementSpeed() {
+        double moveSpeed = getHost().getMovementModel().getAvgSpeed();
+        return moveSpeed;
+    }
+
+    public double getTransmitTime() {
+        return getMovementSpeed() / getTransmitRange();
+    }
+
+//    private void knapsack1(List<Message> m) {
+//        int kapasitasBuffer = getHost().getRouter().getBufferSize();
+////        int jumlahMsg = getHost().getRouter().getNrofMessages();
+//        int jumlahMsg = m.size();
+//        int i, w;
+//        double bestUtility[][] = new double[jumlahMsg + 1][kapasitasBuffer + 1];
+//        ArrayList<ArrayList<Double>> tes = new ArrayList<>();
+//        int bestSolution[] = null;
+//
+//        for (i = 0; i <= jumlahMsg; i++) {
+//            for (w = 0; w <= kapasitasBuffer; w++) {
+//                if (i == 0 || w == 0) {
+//                    bestUtility[i][w] = 0;
+//                } else if (w < m.get(i - 1).getSize()) {
+//                    bestUtility[i][w] = bestUtility[i - 1][w];
+//                } else {
+//                    int iLength = m.get(i - 1).getSize();
+//                    double iUtility = (double) m.get(i - 1).getProperty("utility");
+//                    bestUtility[i][w] = Math.max(bestUtility[i - 1][w], iUtility + bestUtility[i - 1][w - iLength]);
+//                }
+//            }
+//        }
+//        int tempKapBuf = kapasitasBuffer;
+//        if (bestSolution == null) {
+//            bestSolution = new int[jumlahMsg];
+//        }
+//        for (int j = jumlahMsg; j >= 1; j--) {
+//            if (tempKapBuf == 0) {
+//                break;
+//            } else if (bestUtility[j][tempKapBuf] > bestUtility[j - 1][tempKapBuf]) {
+//                bestSolution[j - 1] = 1;
+//                m.get(j - 1).updateProperty("knapsack", bestSolution[j - 1]);
+//                tempKapBuf = tempKapBuf - m.get(j - 1).getSize();
+//            } else {
+//                bestSolution[j - 1] = 0;
+//                m.get(j - 1).updateProperty("knapsack", bestSolution[j - 1]);
+//            }
+//        }
+//    }
 }
