@@ -3,6 +3,7 @@ package routing;
 import java.util.*;
 
 import core.*;
+import routing.rapidDecisionEngine.DelayTable;
 
 /**
  * This class overrides ActiveRouter in order to inject calls to a
@@ -91,6 +92,7 @@ public class DecisionEngineRapidRouter extends ActiveRouter {
     protected List<Tuple<Message, Connection>> outgoingMessages;
 
     protected Set<String> tombstones;
+    protected DelayTable delayTable;
 
     /**
      * Used to save state machine when new connections are made. See comment in
@@ -107,7 +109,8 @@ public class DecisionEngineRapidRouter extends ActiveRouter {
 
         decider = (RoutingDecisionEngineRapid) routeSettings.createIntializedObject(
                 "routing." + routeSettings.getSetting(ENGINE_SETTING));
-
+//        this.delayTable = new DelayTable(super.getHost());
+        //DTNHost tes = this.getHost();
         if (routeSettings.contains(TOMBSTONE_SETTING)) {
             tombstoning = routeSettings.getBoolean(TOMBSTONE_SETTING);
         } else {
@@ -123,14 +126,21 @@ public class DecisionEngineRapidRouter extends ActiveRouter {
     public DecisionEngineRapidRouter(DecisionEngineRapidRouter r) {
         super(r);
         outgoingMessages = new LinkedList<Tuple<Message, Connection>>();
-        decider = r.decider.replicate();
-        tombstoning = r.tombstoning;
 
+        decider = r.decider.replicate();
+        delayTable = r.delayTable;
+        tombstoning = r.tombstoning;
         if (this.tombstoning) {
             tombstones = new HashSet<String>(10);
         }
         conStates = new HashMap<Connection, Integer>(4);
     }
+    
+    @Override
+	public void initialize(DTNHost host, List<MessageListener> mListeners) {
+            super.initialize(host, mListeners);
+            this.delayTable = new DelayTable(super.getHost());
+        }
 
     //@Override
     public MessageRouter replicate() {
@@ -139,15 +149,18 @@ public class DecisionEngineRapidRouter extends ActiveRouter {
 
     @Override
     public boolean createNewMessage(Message m) {
-        if (true) {
+        if (decider.newMessage(m)) {
+            DTNHost from = null;
+
+            decider.update(m, getHost(), from, "create");
+
             if (m.getId().equals("M14")) {
                 System.out.println("Host: " + getHost() + "Creating M14");
             }
             makeRoomForNewMessage(m.getSize());
             m.setTtl(this.msgTtl);
             addToMessages(m, true);
-            
-            decider.newMessage(m);
+            //dummy host
 
             findConnectionsForNewMessage(m, getHost());
             return true;
@@ -155,7 +168,7 @@ public class DecisionEngineRapidRouter extends ActiveRouter {
         return false;
     }
 
-    @Override
+    /*@Override
     public void connectionUp(Connection con) {
         DTNHost myHost = getHost();
         DTNHost otherNode = con.getOtherNode(myHost);
@@ -181,7 +194,7 @@ public class DecisionEngineRapidRouter extends ActiveRouter {
 		 * initiate the exchange of information, and it's assumed that this code
 		 * will update the information on both peers simultaneously using the old
 		 * information from both peers.
-         */
+         *
         if (shouldNotifyPeer(con)) {
             this.doExchange(con, otherNode);
             otherRouter.didExchange(con);
@@ -190,7 +203,7 @@ public class DecisionEngineRapidRouter extends ActiveRouter {
         /*
 		 * Once we have new information computed for the peer, we figure out if
 		 * there are any messages that should get sent to this peer.
-         */
+         *
         Collection<Message> msgs = getMessageCollection();
         for (Message m : msgs) {
             if (decider.shouldSendMessageToHost(m, otherNode)) {
@@ -212,7 +225,7 @@ public class DecisionEngineRapidRouter extends ActiveRouter {
         /*
 		 * If we  were trying to send message to this peer, we need to remove them
 		 * from the outgoing List.
-         */
+         *
         for (Iterator<Tuple<Message, Connection>> i = outgoingMessages.iterator();
                 i.hasNext();) {
             Tuple<Message, Connection> t = i.next();
@@ -221,18 +234,16 @@ public class DecisionEngineRapidRouter extends ActiveRouter {
             }
         }
     }
+     */
+    @Override
+    public void changedConnection(Connection con) {
+        DTNHost myHost = getHost();
+        DTNHost otherNode = con.getOtherNode(myHost);
+        DecisionEngineRapidRouter otherRouter = (DecisionEngineRapidRouter) otherNode.getRouter();
+        if (con.isUp()) {
+            decider.connectionUp(con, myHost, otherNode);
 
-    /*@Override
-	public void changedConnection(Connection con)
-	{
-		DTNHost myHost = getHost();
-		DTNHost otherNode = con.getOtherNode(myHost);
-		DecisionEngineRouter otherRouter = (DecisionEngineRouter)otherNode.getRouter();
-		if(con.isUp())
-		{
-			decider.connectionUp(myHost, otherNode);
-			
-			/*
+            /*
 			 * This part is a little confusing because there's a problem we have to
 			 * avoid. When a connection comes up, we're assuming here that the two 
 			 * hosts who are now connected will exchange some routing information and
@@ -250,43 +261,42 @@ public class DecisionEngineRapidRouter extends ActiveRouter {
 			 * initiate the exchange of information, and it's assumed that this code
 			 * will update the information on both peers simultaneously using the old
 			 * information from both peers.
-			 *
-			if(shouldNotifyPeer(con))
-			{
-				this.doExchange(con, otherNode);
-				otherRouter.didExchange(con);
-			}
-			
-			/*
+             */
+            if (shouldNotifyPeer(con)) {
+                this.doExchange(con, otherNode);
+                otherRouter.didExchange(con);
+            }
+
+            /*
 			 * Once we have new information computed for the peer, we figure out if
 			 * there are any messages that should get sent to this peer.
-			 *
-			Collection<Message> msgs = getMessageCollection();
-			for(Message m : msgs)
-			{
-				if(decider.shouldSendMessageToHost(m, otherNode))
-					outgoingMessages.add(new Tuple<Message,Connection>(m, con));
-			}
-		}
-		else
-		{
-			decider.connectionDown(myHost, otherNode);
-			
-			conStates.remove(con);
-			
-			/*
+             */
+            Collection<Message> msgs = getMessageCollection();
+            Collection<Message> tempMsgs = decider.sortMessage(msgs);
+            for (Message m : tempMsgs) {
+                if (decider.shouldSendMessageToHost(m, otherNode)) {
+                    outgoingMessages.add(new Tuple<Message, Connection>(m, con));
+                }
+            }
+        } else {
+            decider.connectionDown(con, myHost, otherNode);
+
+            conStates.remove(con);
+
+            /*
 			 * If we  were trying to send message to this peer, we need to remove them
 			 * from the outgoing List.
-			 *
-			for(Iterator<Tuple<Message,Connection>> i = outgoingMessages.iterator(); 
-					i.hasNext();)
-			{
-				Tuple<Message, Connection> t = i.next();
-				if(t.getValue() == con)
-					i.remove();
-			}
-		}
-	}*/
+             */
+            for (Iterator<Tuple<Message, Connection>> i = outgoingMessages.iterator();
+                    i.hasNext();) {
+                Tuple<Message, Connection> t = i.next();
+                if (t.getValue() == con) {
+                    i.remove();
+                }
+            }
+        }
+    }
+
     protected void doExchange(Connection con, DTNHost otherHost) {
         conStates.put(con, 1);
         decider.doExchangeForNewConnection(con, otherHost);
@@ -333,6 +343,8 @@ public class DecisionEngineRapidRouter extends ActiveRouter {
         if (isDeliveredMessage(m) || (tombstoning && tombstones.contains(m.getId()))) {
             return DENIED_DELIVERED;
         }
+        
+        decider.update(m,getHost(), from, "receive");
 
         return super.receiveMessage(m, from);
     }
@@ -364,8 +376,8 @@ public class DecisionEngineRapidRouter extends ActiveRouter {
         boolean isFirstDelivery = isFinalRecipient
                 && !isDeliveredMessage(aMessage);
 
-        if (outgoing != null && aMessage.getTo() != getHost()) {
-            decider.shouldSaveReceivedMessage(aMessage, getHost(), from);
+        if (outgoing != null &&  decider.shouldSaveReceivedMessage(aMessage, getHost())) {
+            //decider.shouldSaveReceivedMessage(aMessage, getHost(), from);
             // not the final recipient and app doesn't want to drop the message
             // -> put to buffer
             addToMessages(aMessage, false);
@@ -419,8 +431,8 @@ public class DecisionEngineRapidRouter extends ActiveRouter {
     @Override
     public void update() {
         super.update();
-        
-        decider.update();
+
+        decider.ckeckConnectionStatus(getHost());
         if (!canStartTransfer() || isTransferring()) {
             return; // nothing to transfer or is currently transferring 
         }
@@ -467,14 +479,6 @@ public class DecisionEngineRapidRouter extends ActiveRouter {
      */
     @Override
     public boolean isSending(String msgId) {
-        for (Connection con : this.sendingConnections) {
-            if (con.getMessage() == null) {
-                continue; // transmission is finalized
-            }
-            if (con.getMessage().getId().equals(msgId)) {
-                return true;
-            }
-        }
-        return false;
+        return super.isSending(msgId);
     }
 }

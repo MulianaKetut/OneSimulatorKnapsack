@@ -131,14 +131,14 @@ public class DelayTable {
 	 * at the end of the meeting.
 	 * @param con The current connection
 	 */
-//	public void dummyUpdateConnection(DTNHost peer) {
-//		final double DUMMY_AVG_MEETING_TIME = 1.0;
-//		updateAvgMeetingTime(host.getAddress(), peer.getAddress(), DUMMY_AVG_MEETING_TIME, SimClock.getTime(), true);
-//	}
-	public void dummyUpdateConnection(Connection con) {
+	public void dummyUpdateConnection(DTNHost peer) {
 		final double DUMMY_AVG_MEETING_TIME = 1.0;
-		updateAvgMeetingTime(host.getAddress(), con.getOtherNode(host).getAddress(), DUMMY_AVG_MEETING_TIME, SimClock.getTime(), true);
+		updateAvgMeetingTime(host.getAddress(), peer.getAddress(), DUMMY_AVG_MEETING_TIME, SimClock.getTime(), true);
 	}
+//	public void dummyUpdateConnection(Connection con) {
+//		final double DUMMY_AVG_MEETING_TIME = 1.0;
+//		updateAvgMeetingTime(host.getAddress(), con.getOtherNode(host).getAddress(), DUMMY_AVG_MEETING_TIME, SimClock.getTime(), true);
+//	}
 	
 	/**
 	 * Updates the average transfer opportunity and the average meeting time

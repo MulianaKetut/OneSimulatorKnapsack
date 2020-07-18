@@ -571,36 +571,35 @@ public abstract class MessageRouter {
                     }
                 });
                 break;
-            case Q_MODE_UTILITY:
-                Collections.sort(list,
-                        new Comparator() {
-                    @Override
-                    public int compare(Object u1, Object u2) {
-                        double diff;
-                        Message m1, m2;
-
-                        if (u1 instanceof Tuple) {
-                            m1 = ((Tuple<Message, Connection>) u1).getKey();
-                            m2 = ((Tuple<Message, Connection>) u2).getKey();
-                        } else if (u1 instanceof Message) {
-                            m1 = (Message) u1;
-                            m2 = (Message) u2;
-                        } else {
-                            throw new SimError("Invalid type of objects in "
-                                    + "the list");
-                        }
-                        diff = (double) m2.getProperty("utility") - (double) m1.getProperty("utility");
-                        if (diff == 0) {
-                            return compareByQueueMode(m1, m2);
-                        } else if (diff < 0) {
-                            return -1;
-                        } else {
-                            return 1;
-                        }
-                    }
-
-                });
-                break;
+//            case Q_MODE_UTILITY:
+//                Collections.sort(list,
+//                        new Comparator() {
+//                    public int compare(Object u1, Object u2) {
+//                        double diff;
+//                        Message m1, m2;
+//
+//                        if (u1 instanceof Tuple) {
+//                            m1 = ((Tuple<Message, Connection>) u1).getKey();
+//                            m2 = ((Tuple<Message, Connection>) u2).getKey();
+//                        } else if (u1 instanceof Message) {
+//                            m1 = (Message) u1;
+//                            m2 = (Message) u2;
+//                        } else {
+//                            throw new SimError("Invalid type of objects in "
+//                                    + "the list");
+//                        }
+//                        diff = (double) m2.getProperty("utility") - (double) m1.getProperty("utility");
+//                        if (diff == 0) {
+//                            return (m1.hashCode() / 2 + m2.hashCode() / 2) % 3 - 1;
+//                        } else if (diff < 0) {
+//                            return -1;
+//                        } else {
+//                            return 1;
+//                        }
+//                    }
+//
+//                });
+//                break;
             /* add more queue modes here */
             default:
                 throw new SimError("Unknown queue mode " + sendQueueMode);
@@ -629,15 +628,17 @@ public abstract class MessageRouter {
                     return 0;
                 }
                 return (diff < 0 ? -1 : 1);
-            case Q_MODE_UTILITY:
-                double utility = (double) m2.getProperty("utility") - (double) m1.getProperty("utility");
-                if (utility == 0) {
-                    return compareByQueueMode(m1, m2);
-                } else if (utility < 0) {
-                    return -1;
-                } else {
-                    return 1;
-                }
+//            case Q_MODE_UTILITY:
+//                System.out.println(m1.getProperty("utility")+" "+m2.getProperty("utility"));
+//                double utility = (double) m2.getProperty("utility") - (double) m1.getProperty("utility");
+//                if (utility == 0) {
+//                    //random
+//                    return (m1.hashCode() / 2 + m2.hashCode() / 2) % 3 - 1;
+//                } else if (utility < 0) {
+//                    return -1;
+//                } else {
+//                    return 1;
+//                }
             /* add more queue modes here */
             default:
                 throw new SimError("Unknown queue mode " + sendQueueMode);

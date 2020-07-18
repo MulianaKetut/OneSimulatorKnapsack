@@ -1,6 +1,7 @@
 package routing;
 
 import core.*;
+import java.util.Collection;
 
 /**
  * Defines the interface between DecisionEngineRouter and its decision making
@@ -74,7 +75,7 @@ public interface RoutingDecisionEngineRapid {
      * @return true if the message should be saved and further routed. False
      * otherwise.
      */
-    public boolean shouldSaveReceivedMessage(Message m, DTNHost thisHost, DTNHost from);
+    public boolean shouldSaveReceivedMessage(Message m, DTNHost thisHost);
 
     /**
      * Called to determine if the given Message should be sent to the given
@@ -116,6 +117,19 @@ public interface RoutingDecisionEngineRapid {
      */
     public RoutingDecisionEngineRapid replicate();
 
-    public void update();
+    /**
+     * Update ketika ada pesan baru yang dibuat dan pesan yang diterima
+     * 
+     * @param m
+     * @param host     
+     * @param from
+     * @param status untuk membedakan apakah sedang didalam proses new Message atau receive message
+     */
+    public void update(Message m, DTNHost host, DTNHost from , String status);
+    
+    public void ckeckConnectionStatus(DTNHost thisHost);
+    
+    
+    public Collection<Message> sortMessage(Collection<Message> msgCollection);
 
 }
